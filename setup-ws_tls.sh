@@ -42,7 +42,9 @@ fi
 
 ask() {
   local prompt="$1" default="${2-}" value
-  if [ -n "$default" ]; then printf '%s [%s]: ' "$prompt" "$default"; else printf '%s: ' "$prompt"; fi
+  # Значение функции вызывается через command substitution; печатаем prompt в
+  # stderr, чтобы он не пропал внутри $(ask ...), а введённое значение ушло в stdout.
+  if [ -n "$default" ]; then printf '%s [%s]: ' "$prompt" "$default" >&2; else printf '%s: ' "$prompt" >&2; fi
   IFS= read -r value || true
   printf '%s' "${value:-$default}"
 }
