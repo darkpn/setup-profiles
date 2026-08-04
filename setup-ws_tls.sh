@@ -81,6 +81,34 @@ PREV_WS_PORT="$(state_get XRAY_WS_PORT 18083)"
 PREV_RELAY_IP="$(state_get RELAY_IP)"
 ORIGIN_DOMAIN="$(ask 'Домен origin (A-запись должна указывать на этот сервер)' "$PREV_DOMAIN")"
 valid_domain "$ORIGIN_DOMAIN" || die "некорректное доменное имя: $ORIGIN_DOMAIN"
+
+# Показываем DNS-инструкцию сразу после ввода домена, до остальных вопросов.
+# Это предотвращает типичную ошибку: сертификат запрашивается до создания A-записи.
+NODE_IP=""
+if command -v curl >/dev/null 2>&1; then
+  NODE_IP="$(curl -4fsS --connect-timeout 3 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+fi
+if [ -z "$NODE_IP" ]; then
+  NODE_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
+fi
+cat <<EOF
+
+DNS-запись для этой ноды:
+  Тип:    A
+  Имя:    $ORIGIN_DOMAIN
+  Значение: ${NODE_IP:-ПУБЛИЧНЫЙ_IPV4_ЭТОГО_СЕРВЕРА}
+  TTL:    300 (или Auto)
+
+Удалите конфликтующую AAAA-запись, если IPv6 на сервере не настроен.
+Не включайте CDN/прокси для этой записи: нужен прямой DNS на IP ноды.
+После добавления проверьте:
+  dig +short A $ORIGIN_DOMAIN @1.1.1.1
+  dig +short A $ORIGIN_DOMAIN @8.8.8.8
+EOF
+if ! ask_yes_no "A-запись уже добавлена и указывает на этот сервер?" N; then
+  die "Сначала добавьте A-запись $ORIGIN_DOMAIN → ${NODE_IP:-публичный IPv4 сервера}, затем запустите скрипт снова"
+fi
+
 WS_PATH="$(ask 'Уникальный WS_PATH (начинается с /)' "$PREV_PATH")"
 valid_path "$WS_PATH" || die "некорректный WS_PATH"
 ORIGIN_TLS_PORT="$(ask 'TLS-порт origin' "$PREV_TLS_PORT")"
@@ -90,10 +118,6 @@ valid_port "$XRAY_WS_PORT" || die "некорректный WS-порт"
 RELAY_IP="$(ask 'IP общего relay (пусто = не ограничивать 8443)' "$PREV_RELAY_IP")"
 [ -z "$RELAY_IP" ] || valid_ipv4 "$RELAY_IP" || die "некорректный IPv4 relay"
 
-NODE_IP=""
-if command -v curl >/dev/null 2>&1; then
-  NODE_IP="$(curl -4fsS --connect-timeout 3 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
-fi
 DNS_IPS="$(getent ahostsv4 "$ORIGIN_DOMAIN" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')"
 echo "DNS: ${DNS_IPS:-не резолвится}; обнаруженный IP сервера: ${NODE_IP:-не определён}"
 if [ -n "$NODE_IP" ] && [ -n "$DNS_IPS" ] && ! grep -Fqw "$NODE_IP" <<<"$DNS_IPS"; then
