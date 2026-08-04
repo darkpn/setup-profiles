@@ -42,10 +42,15 @@ fi
 
 ask() {
   local prompt="$1" default="${2-}" value
-  # Значение функции вызывается через command substitution; печатаем prompt в
-  # stderr, чтобы он не пропал внутри $(ask ...), а введённое значение ушло в stdout.
-  if [ -n "$default" ]; then printf '%s [%s]: ' "$prompt" "$default" >&2; else printf '%s: ' "$prompt" >&2; fi
-  IFS= read -r value || true
+  # Читаем непосредственно с терминала: функция вызывается через $(ask ...),
+  # поэтому обычный stdin может быть захвачен command substitution.
+  if [ -r /dev/tty ]; then
+    if [ -n "$default" ]; then printf '%s [%s]: ' "$prompt" "$default" >/dev/tty; else printf '%s: ' "$prompt" >/dev/tty; fi
+    IFS= read -r value </dev/tty || true
+  else
+    if [ -n "$default" ]; then printf '%s [%s]: ' "$prompt" "$default" >&2; else printf '%s: ' "$prompt" >&2; fi
+    IFS= read -r value || true
+  fi
   printf '%s' "${value:-$default}"
 }
 state_get() {
