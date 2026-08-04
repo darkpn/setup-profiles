@@ -126,9 +126,38 @@ DNS-запись для этой ноды:
   dig +short A $ORIGIN_DOMAIN @1.1.1.1
   dig +short A $ORIGIN_DOMAIN @8.8.8.8
 EOF
-if ! ask_yes_no "A-запись уже добавлена и указывает на этот сервер?" N; then
-  die "Сначала добавьте A-запись $ORIGIN_DOMAIN → ${NODE_IP:-публичный IPv4 сервера}, затем запустите скрипт снова"
-fi
+
+resolve_public_ipv4() {
+  local resolver out
+  if command -v dig >/dev/null 2>&1; then
+    for resolver in 1.1.1.1 8.8.8.8; do
+      out="$(dig +short +time=2 +tries=1 A "$ORIGIN_DOMAIN" @"$resolver" 2>/dev/null || true)"
+      printf '%s\n' "$out" | awk '/^[0-9]+(\.[0-9]+){3}$/'
+    done | sort -u
+  else
+    getent ahostsv4 "$ORIGIN_DOMAIN" 2>/dev/null | awk '{print $1}' | sort -u
+  fi
+}
+
+[ -n "$NODE_IP" ] || die "Не удалось определить публичный IPv4 этого сервера"
+echo "Проверяю DNS автоматически. Ожидается: $ORIGIN_DOMAIN → $NODE_IP" >&2
+DNS_IPS=""
+DNS_READY=0
+for attempt in {1..60}; do
+  DNS_IPS="$(resolve_public_ipv4)"
+  if printf '%s\n' "$DNS_IPS" | grep -Fqx "$NODE_IP"; then
+    DNS_READY=1
+    echo "DNS готов: $ORIGIN_DOMAIN → $NODE_IP" >&2
+    break
+  fi
+  if [ -n "$DNS_IPS" ]; then
+    echo "Попытка $attempt/60: получено [$DNS_IPS], ожидается [$NODE_IP]. Повтор через 5 секунд..." >&2
+  else
+    echo "Попытка $attempt/60: запись пока не видна. Повтор через 5 секунд..." >&2
+  fi
+  sleep 5
+done
+[ "$DNS_READY" -eq 1 ] || die "DNS не указывает на $NODE_IP после 5 минут ожидания. Добавьте A-запись и запустите скрипт снова."
 
 WS_PATH="$(ask 'Уникальный WS_PATH (начинается с /)' "$PREV_PATH")"
 valid_path "$WS_PATH" || die "некорректный WS_PATH"
@@ -139,12 +168,7 @@ valid_port "$XRAY_WS_PORT" || die "некорректный WS-порт"
 RELAY_IP="$(ask 'IP общего relay (пусто = не ограничивать 8443)' "$PREV_RELAY_IP")"
 [ -z "$RELAY_IP" ] || valid_ipv4 "$RELAY_IP" || die "некорректный IPv4 relay"
 
-DNS_IPS="$(getent ahostsv4 "$ORIGIN_DOMAIN" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')"
-echo "DNS: ${DNS_IPS:-не резолвится}; обнаруженный IP сервера: ${NODE_IP:-не определён}"
-if [ -n "$NODE_IP" ] && [ -n "$DNS_IPS" ] && ! grep -Fqw "$NODE_IP" <<<"$DNS_IPS"; then
-  warn "DNS не указывает на обнаруженный IP этого сервера. Сертификат Caddy может не выпуститься."
-  ask_yes_no "Продолжить всё равно?" N || exit 1
-fi
+echo "DNS: $DNS_IPS; обнаруженный IP сервера: $NODE_IP"
 
 note "Диагностика и безопасные проверки"
 . /etc/os-release
