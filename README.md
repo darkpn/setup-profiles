@@ -28,15 +28,23 @@ curl -fsSL https://raw.githubusercontent.com/darkpn/setup-profiles/main/setup-ws
 ## Что выполняется
 
 - проверка ОС, DNS, ресурсов и занятых портов;
-- проверка локального Xray listener;
+- проверка текущего listener Xray и предупреждение о существующем inbound;
 - отображение RAM и swap;
 - предложение создать swap 2 ГБ;
 - установка и настройка Caddy;
 - выпуск TLS-сертификата;
 - настройка HTTPS, `/healthz` и WebSocket reverse proxy;
 - настройка UFW;
-- генерация конфига inbound для Remnawave;
+- генерация готового JSON inbound для Remnawave;
+- генерация инструкции по добавлению inbound в уже существующий Config Profile;
+- ожидание появления нового listener после применения профиля;
 - проверка TLS, HTTP `200` и WebSocket `101`.
+
+Если в Remnawave уже назначен другой Config Profile или на порту работает
+старый inbound, скрипт его не удаляет. Новый объект добавляется отдельно в
+существующий массив `inbounds`. После применения профиля скрипт проверяет, что
+на `127.0.0.1:18083` появился listener. Подробная инструкция сохраняется в
+`/root/ws-node-generated/inbound-merge-instructions.txt`.
 
 ## Сгенерированные файлы
 

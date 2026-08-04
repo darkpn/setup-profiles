@@ -11,6 +11,7 @@ LOCK_FILE=/run/ws-node-setup.lock
 SKIP_LISTENER_CHECK=0
 STATE_FILE=/root/.ws-node-setup.conf
 GENERATED_DIR=/root/ws-node-generated
+WAIT_FOR_PANEL=1
 
 usage() {
   cat <<'EOF'
@@ -119,16 +120,14 @@ fi
 echo "Docker/RemnaNode:"
 if command -v docker >/dev/null 2>&1; then docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' || true; else warn "docker не установлен"; fi
 
-listener_line="$(ss -lntp 2>/dev/null | awk -v p=":$XRAY_WS_PORT" '$4=="127.0.0.1"p || $4=="127.0.0.1"p {print; exit}')"
+listener_line="$(ss -lntp 2>/dev/null | awk -v p=":$XRAY_WS_PORT" '$4=="127.0.0.1"p {print; exit}')"
+if [ -n "$listener_line" ]; then
+  echo "На 127.0.0.1:$XRAY_WS_PORT уже есть listener: $listener_line"
+  warn "Существующий inbound не изменяется. Убедитесь, что это именно новый WS-inbound."
+fi
 if [ "$SKIP_LISTENER_CHECK" -eq 0 ] && [ -z "$listener_line" ]; then
-  echo "Локальный listener 127.0.0.1:$XRAY_WS_PORT не найден."
-  cat <<EOF
-Сначала добавьте в Remnawave Config Profile inbound:
-  listen=127.0.0.1, port=$XRAY_WS_PORT, network=ws, security=none,
-  wsSettings.path=$WS_PATH
-После применения профиля запустите скрипт снова.
-EOF
-  ask_yes_no "Продолжить без listener (Caddy будет настроен, но WS пока не заработает)?" N || exit 1
+  echo "На предварительной проверке listener 127.0.0.1:$XRAY_WS_PORT ещё не найден."
+  echo "Это нормально, если inbound будет добавлен в Remnawave после генерации файла."
 fi
 
 if ss -lntp 2>/dev/null | grep -Eq ':[[:digit:]]+ +[^ ]*:(80|443)( |$)'; then
@@ -241,6 +240,37 @@ XRAY_WS_PORT=$XRAY_WS_PORT
 RELAY_IP=$RELAY_IP
 EOF
 chmod 600 "$GENERATED_DIR"/node.env "$GENERATED_DIR"/inbound-vless-ws.json
+
+cat >"$GENERATED_DIR/inbound-merge-instructions.txt" <<EOF
+1. Откройте Config Profile, который назначен этой RemnaNode.
+2. Не удаляйте существующие inbound. Добавьте содержимое inbound-vless-ws.json
+   отдельным объектом в существующий массив "inbounds".
+3. Сохраните профиль, назначьте его этой ноде и примените/пересоздайте конфигурацию.
+4. Убедитесь, что появился listener 127.0.0.1:$XRAY_WS_PORT.
+5. Вернитесь в этот скрипт или запустите его повторно для финальной проверки.
+
+Ожидаемый объект: tag=VLESS-WS-RELAY, network=ws, security=none,
+path=$WS_PATH, port=$XRAY_WS_PORT.
+EOF
+chmod 600 "$GENERATED_DIR/inbound-merge-instructions.txt"
+
+if [ "$SKIP_LISTENER_CHECK" -eq 0 ] && [ -z "$listener_line" ]; then
+  cat "$GENERATED_DIR/inbound-merge-instructions.txt"
+  if ask_yes_no "Вы уже применили новый Config Profile и хотите подождать listener?" Y; then
+    for _ in {1..30}; do
+      listener_line="$(ss -lntp 2>/dev/null | awk -v p=":$XRAY_WS_PORT" '$4=="127.0.0.1"p {print; exit}')"
+      [ -n "$listener_line" ] && break
+      sleep 2
+    done
+    if [ -z "$listener_line" ]; then
+      warn "listener пока не появился. Проверьте применение профиля и перезапустите скрипт."
+    else
+      echo "Новый listener обнаружен: $listener_line"
+    fi
+  else
+    WAIT_FOR_PANEL=0
+  fi
+fi
 systemctl enable --now caddy
 systemctl reload caddy
 
@@ -276,6 +306,7 @@ WebSocket_upgrade=$ws_ok (HTTP $ws_code)
 TLS=$tls_subject
 BACKUP_DIR=$BACKUP_DIR
 GENERATED_CONFIG_DIR=$GENERATED_DIR
+INBOUND_MERGE_INSTRUCTIONS=$GENERATED_DIR/inbound-merge-instructions.txt
 MEMORY=$(free -h 2>/dev/null | awk '/^Mem:/{print $2" total, "$7" available"}')
 SWAP=$(free -h 2>/dev/null | awk '/^Swap:/{print $2" total, "$3" used"}')
 EOF
@@ -292,7 +323,7 @@ cat /root/ws-node-report.txt
 
 if [ "$health_ok" != PASS ] || [ "$ws_ok" != PASS ]; then
   warn "настройка завершена, но проверки не полностью успешны; отчёт: /root/ws-node-report.txt"
-  warn "для WS 101 должен существовать listener 127.0.0.1:$XRAY_WS_PORT и совпадать WS_PATH."
+  warn "Для WS 101 должен существовать listener 127.0.0.1:$XRAY_WS_PORT, а в применённом профиле должны совпадать port и WS_PATH."
   exit 3
 fi
 
