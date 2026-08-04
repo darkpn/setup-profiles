@@ -79,6 +79,27 @@ PREV_PATH="$(state_get WS_PATH)"
 PREV_TLS_PORT="$(state_get ORIGIN_TLS_PORT 8443)"
 PREV_WS_PORT="$(state_get XRAY_WS_PORT 18083)"
 PREV_RELAY_IP="$(state_get RELAY_IP)"
+
+# Показываем общую DNS-подсказку ещё до ввода домена, чтобы пользователь
+# заранее понимал, какую запись нужно подготовить.
+PREVIEW_NODE_IP=""
+if command -v curl >/dev/null 2>&1; then
+  PREVIEW_NODE_IP="$(curl -4fsS --connect-timeout 3 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+fi
+if [ -z "$PREVIEW_NODE_IP" ]; then
+  PREVIEW_NODE_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
+fi
+cat <<EOF
+
+Перед продолжением подготовьте DNS:
+  Тип:       A
+  Имя:       ваш домен ноды (введёте ниже)
+  Значение:  ${PREVIEW_NODE_IP:-ПУБЛИЧНЫЙ_IPV4_ЭТОГО_СЕРВЕРА}
+  TTL:       300 (или Auto)
+
+Используйте прямую DNS-запись без CDN/прокси. Если IPv6 не настроен,
+удалите конфликтующую AAAA-запись.
+EOF
 ORIGIN_DOMAIN="$(ask 'Домен origin (A-запись должна указывать на этот сервер)' "$PREV_DOMAIN")"
 valid_domain "$ORIGIN_DOMAIN" || die "некорректное доменное имя: $ORIGIN_DOMAIN"
 
