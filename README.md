@@ -10,12 +10,28 @@ Remnawave Panel и не изменяет Config Profile автоматическ
 
 > Перед запуском проверьте, что домен уже указывает A-записью на этот сервер.
 
+Короткий запуск одной командой:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/darkpn/setup-profiles/main/setup-ws_tls.sh \
+  -o /tmp/setup-ws_tls.sh && sudo bash /tmp/setup-ws_tls.sh
+```
+
+Развёрнутый вариант (удобнее проверять скачанный файл):
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/darkpn/setup-profiles/main/setup-ws_tls.sh \
   -o /tmp/setup-ws_tls.sh
 chmod 700 /tmp/setup-ws_tls.sh
-sudo /tmp/setup-ws_tls.sh
+sudo bash /tmp/setup-ws_tls.sh
 ```
+
+Скрипт написан именно для **Bash**, а не для `sh`: он использует Bash-синтаксис
+(`[[ ... ]]`, `local`, массивы и `set -Eeuo pipefail`). Поэтому вариант
+`curl ... | sh` на Ubuntu/Debian может завершиться ошибкой. Кроме того, прямой
+pipe неудобен для интерактивного скрипта: его стандартный ввод занят содержимым
+скрипта, поэтому ответы на вопросы могут не читаться с клавиатуры. Скачивание во
+временный файл позволяет проверить файл и сохранить интерактивный ввод.
 
 Для просмотра справки:
 
