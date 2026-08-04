@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/darkpn/setup-profiles/main/setup-ws
 | Уникальный WS-путь | — | `/assets/RandomPath` |
 | TLS-порт | `8443` | `8443` |
 | Локальный WS-порт Xray | `18083` | `18083` |
-| IP relay | — | `176.109.92.130` |
+| IP relay | — | IP-адрес relay-сервера |
 
 Значения сохраняются и автоматически подставляются при следующем запуске.
 
